@@ -1,0 +1,23 @@
+name = "notion-caldav"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+# Non-secret config. One block per synced Notion database: the EXACT date
+# column name, and the database ID (from its page URL).
+[vars]
+DATE_PROP_HABITS = "Event Time"
+NOTION_DB_HABITS = "1b9835b175d88040806bce7b25f8c9bc"
+DATE_PROP_TASKS = "Do Date"
+NOTION_DB_TASKS = "498a976ddb2b4598ac89dd474e599dec"
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+# Secrets are NOT stored here. Set them with:
+#   npx wrangler secret put NOTION_TOKEN
+#   npx wrangler secret put NOTION_VERIFICATION_TOKEN
+#   npx wrangler secret put ICLOUD_USER
+#   npx wrangler secret put ICLOUD_APP_PW
+#   npx wrangler secret put ICLOUD_CALENDAR_URL_HABITS
+#   npx wrangler secret put ICLOUD_CALENDAR_URL_TASKS
