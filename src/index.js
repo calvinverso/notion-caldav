@@ -80,7 +80,8 @@ export default {
     // Batches itself to stay under the per-invocation subrequest limit; call GET
     // /cleanup once and it re-dispatches itself until the backlog is drained.
     if (url.pathname === "/cleanup") {
-      ctx.waitUntil(cleanupOrphanedHabits(env, url.origin, ctx)
+      const depth = parseInt(url.searchParams.get("depth") || "0");
+      ctx.waitUntil(cleanupOrphanedHabits(env, url.origin, ctx, depth)
         .then(r => console.log("cleanup done:", JSON.stringify(r)))
         .catch(e => console.error("cleanup error:", e.message)));
       return new Response("Cleaning up orphaned habit pages…", { status: 202 });
@@ -539,7 +540,17 @@ const PERSISTENT_HABITS = new Set(["Finances", "Laundry"]);
 // PATCHes stays comfortably under that, leaving room for the continuation fetch.
 const CLEANUP_BATCH_SIZE = 40;
 
-async function cleanupOrphanedHabits(env, origin, ctx) {
+// Hard ceiling on continuation hops (25 * CLEANUP_BATCH_SIZE = 1000 pages of headroom).
+// Guards against a genuine infinite loop rather than relying solely on the
+// has-more/made-progress check below.
+const MAX_CLEANUP_DEPTH = 25;
+
+async function cleanupOrphanedHabits(env, origin, ctx, depth = 0) {
+  if (depth >= MAX_CLEANUP_DEPTH) {
+    console.error(`cleanup aborted: hit MAX_CLEANUP_DEPTH (${MAX_CLEANUP_DEPTH})`);
+    return [`aborted: exceeded ${MAX_CLEANUP_DEPTH} batches, check manually`];
+  }
+
   const res = await fetch(`https://api.notion.com/v1/data_sources/${HABITS_DS_ID}/query`, {
     method: "POST",
     headers: notionHeaders(env),
@@ -552,23 +563,27 @@ async function cleanupOrphanedHabits(env, origin, ctx) {
   const { results: pages, has_more } = await res.json();
 
   const log = [];
-  let archivedCount = 0;
+  let nonPersistentCount = 0;
   for (const page of pages) {
     const name = page.properties?.Name?.title?.[0]?.plain_text || "";
     if (PERSISTENT_HABITS.has(name)) { log.push(`keep [persistent]: ${name}`); continue; }
+    nonPersistentCount++;
     const r = await fetch(`https://api.notion.com/v1/pages/${page.id}`, {
       method: "PATCH",
       headers: notionHeaders(env),
       body: JSON.stringify({ in_trash: true }),
     });
-    if (r.ok) archivedCount++;
     log.push(r.ok ? `archived: ${name}` : `failed: ${name} ${r.status} ${await r.text()}`);
   }
 
-  // Keep going only if this batch made progress — otherwise everything left matching
-  // the filter is persistent-habit pages, which will never clear and would loop forever.
-  if (has_more && archivedCount > 0) {
-    ctx.waitUntil(fetch(`${origin}/cleanup`).catch(e => console.error("cleanup continue:", e)));
+  // Keep going whenever this batch touched at least one non-persistent page — even
+  // if every archive attempt in it failed (e.g. a transient Notion rate limit), those
+  // pages stay unarchived and will simply be retried next hop. Only stop when what's
+  // left matching the filter is entirely persistent-habit pages (or nothing).
+  if (has_more && nonPersistentCount > 0) {
+    ctx.waitUntil(
+      fetch(`${origin}/cleanup?depth=${depth + 1}`).catch(e => console.error("cleanup continue:", e))
+    );
     log.push("continuing…");
   }
 
