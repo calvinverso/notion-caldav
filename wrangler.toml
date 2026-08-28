@@ -2,13 +2,17 @@ name = "notion-caldav"
 main = "src/index.js"
 compatibility_date = "2026-08-01"
 
+[triggers]
+# Two crons 15 min apart so each batch runs as its own invocation (free plan: 50 subrequest limit)
+crons = ["0 6 * * SUN", "15 6 * * SUN"]  # Sunday 06:00 and 06:15 UTC = 00:00 and 00:15 CST
+
 # Non-secret config. One block per synced Notion database: the EXACT date
 # column name, and the database ID (from its page URL).
 [vars]
-DATE_PROP_HABITS = "Event Time"
-NOTION_DB_HABITS = "1b9835b175d88040806bce7b25f8c9bc"
-DATE_PROP_TASKS = "Do Date"
-NOTION_DB_TASKS = "498a976ddb2b4598ac89dd474e599dec"
+DATE_PROP_HABITS  = "Event Time"
+NOTION_DB_HABITS  = "1b9835b175d88040806bce7b25f8c9bc"
+DATE_PROP_TASKS   = "Do Date"
+NOTION_DB_TASKS   = "498a976ddb2b4598ac89dd474e599dec"
 
 [observability.logs]
 enabled = true
